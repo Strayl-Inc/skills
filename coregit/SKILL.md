@@ -199,3 +199,6 @@ console.log(data.content);
 - Use `parent_sha` in commit requests for conflict detection (returns 409 if branch moved).
 - Snapshots are named restore points — create one before risky operations.
 - Full docs at https://docs.coregit.dev
+- Agent onboarding guide: https://docs.coregit.dev/docs/getting-started/agent-onboarding
+- TypeScript SDK: https://docs.coregit.dev/docs/getting-started/typescript-sdk
+- API reference: https://docs.coregit.dev/docs/api-reference
