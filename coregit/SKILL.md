@@ -1,7 +1,7 @@
 ---
 name: coregit
 description: |
-  Serverless Git backend for AI-native products. Use this skill when the user wants to create git repos, commit code, read files, diff branches, or set up version control via API — without the git CLI. Handles user onboarding (signup, email verification, API key) entirely from the terminal.
+  Serverless Git backend for AI-native products. Use this skill when the user wants to create git repos, commit code, read files, diff branches, search code (full-text or AI semantic search), or set up version control via API — without the git CLI. Handles user onboarding (signup, email verification, API key) entirely from the terminal.
 metadata:
   author: coregit
   version: "1.0.0"
@@ -106,6 +106,7 @@ curl -X POST https://api.coregit.dev/v1/repos/my-project/commits \
   -d '{
     "branch": "main",
     "message": "feat: initial code",
+    "author": {"name": "Agent", "email": "agent@example.com"},
     "changes": [
       {"path": "src/index.ts", "content": "console.log(\"hello\")"},
       {"path": "README.md", "content": "# My Project"}
@@ -163,6 +164,7 @@ await git.repos.create({ slug: "my-project" });
 await git.commits.create("my-project", {
   branch: "main",
   message: "feat: add auth",
+  author: { name: "Agent", email: "agent@example.com" },
   changes: [
     { path: "src/auth.ts", content: "export function login() {}" },
     { path: "src/config.ts", content: '{"apiUrl": "https://api.example.com"}' },
@@ -172,7 +174,49 @@ await git.commits.create("my-project", {
 // Read file
 const { data } = await git.files.blob("my-project", "main", "src/auth.ts");
 console.log(data.content);
+
+// Semantic search (requires indexing first)
+await git.search.triggerIndex("my-project", { branch: "main" });
+const { data: results } = await git.search.semantic("my-project", {
+  q: "authentication logic",
+  ref: "main",
+});
 ```
+
+### Search code (full-text)
+
+```bash
+curl -X POST https://api.coregit.dev/v1/search \
+  -H "x-api-key: $COREGIT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "TODO", "repos": ["my-project"], "ref": "main"}'
+```
+
+`ref` accepts a branch name or commit SHA. Omit for each repo's default branch.
+
+### Semantic search (AI-powered)
+
+Requires indexing first:
+
+```bash
+# 1. Index the repo
+curl -X POST https://api.coregit.dev/v1/repos/my-project/index \
+  -H "x-api-key: $COREGIT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"branch": "main"}'
+
+# 2. Check status (poll until "ready")
+curl https://api.coregit.dev/v1/repos/my-project/index/status \
+  -H "x-api-key: $COREGIT_API_KEY"
+
+# 3. Search by natural language
+curl -X POST https://api.coregit.dev/v1/repos/my-project/semantic-search \
+  -H "x-api-key: $COREGIT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "user authentication with password hashing", "ref": "main"}'
+```
+
+`ref` accepts a branch name or commit SHA — search code as it existed at any version. Set `auto_index: true` on repo creation for automatic indexing on every commit.
 
 ## Key API endpoints
 
@@ -190,7 +234,10 @@ console.log(data.content);
 | GET | /v1/repos/:slug/diff/:ref1/:ref2 | Diff |
 | POST | /v1/repos/:slug/snapshots | Create snapshot |
 | POST | /v1/repos/:slug/exec | Run shell command |
-| POST | /v1/search | Cross-repo search |
+| POST | /v1/search | Cross-repo code search |
+| POST | /v1/repos/:slug/semantic-search | AI semantic search |
+| POST | /v1/repos/:slug/index | Trigger semantic index |
+| GET | /v1/repos/:slug/index/status | Index status |
 
 ## Important notes
 
