@@ -84,64 +84,101 @@ After setup, output a summary:
 - Remind the user to save the API key (it is shown only once)
 - Link to docs: https://docs.coregit.dev
 
-## Using the API
+## Using the CLI (preferred for agents — saves tokens)
 
-All requests require header `x-api-key: cgk_live_...`
+After `cgt auth login`, all commands use stored credentials automatically. Output is JSON.
 
-### Create a repository
+### Repositories
 
 ```bash
-curl -X POST https://api.coregit.dev/v1/repos \
-  -H "x-api-key: $COREGIT_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"slug": "my-project", "visibility": "private"}'
+cgt repos create my-project
+cgt repos list
+cgt repos get my-project
+cgt repos delete my-project
 ```
 
-### Commit files (single API call, multiple files)
+### Commit files
 
 ```bash
-curl -X POST https://api.coregit.dev/v1/repos/my-project/commits \
-  -H "x-api-key: $COREGIT_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "branch": "main",
-    "message": "feat: initial code",
-    "author": {"name": "Agent", "email": "agent@example.com"},
-    "changes": [
-      {"path": "src/index.ts", "content": "console.log(\"hello\")"},
-      {"path": "README.md", "content": "# My Project"}
-    ]
-  }'
+# From local files (path_in_repo:local_file)
+cgt commit my-project -b main -m "feat: init" \
+  -f src/index.ts:./index.ts -f README.md:./README.md
+
+# Inline content (path:=content)
+cgt commit my-project -b main -m "add config" \
+  -f config.json:='{"port": 3000}'
+
+# From stdin (JSON array)
+echo '[{"path":"src/app.ts","content":"console.log(1)"}]' | cgt commit my-project -b main -m "add app"
 ```
 
-### Read a file
+### Read files
 
 ```bash
-curl https://api.coregit.dev/v1/repos/my-project/blob/main/src/index.ts \
-  -H "x-api-key: $COREGIT_API_KEY"
+cgt tree my-project main              # list files
+cgt blob my-project main src/app.ts   # read file (JSON)
+cgt blob my-project main src/app.ts --raw  # raw content
 ```
 
-### List files
+### Branches
 
 ```bash
-curl https://api.coregit.dev/v1/repos/my-project/tree/main \
-  -H "x-api-key: $COREGIT_API_KEY"
+cgt branches create my-project feature-x --from main
+cgt branches list my-project
+cgt branches merge my-project feature-x
+cgt branches delete my-project feature-x
 ```
 
-### Create a branch
+### Diff & Compare
 
 ```bash
-curl -X POST https://api.coregit.dev/v1/repos/my-project/branches \
-  -H "x-api-key: $COREGIT_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "feature-x", "from": "main"}'
+cgt diff my-project main feature-x --patch
+cgt compare my-project main feature-x
 ```
 
-### Diff two branches
+### Commits
 
 ```bash
-curl https://api.coregit.dev/v1/repos/my-project/diff/main/feature-x \
-  -H "x-api-key: $COREGIT_API_KEY"
+cgt log my-project --ref main --limit 10
+```
+
+### Search (full-text)
+
+```bash
+cgt search "TODO" --repos my-project --ref main
+cgt search "function.*Async" --repos my-project --regex
+```
+
+`--ref` accepts branch name or commit SHA.
+
+### Semantic search (AI-powered)
+
+```bash
+# 1. Index the repo
+cgt index create my-project -b main
+
+# 2. Check status (poll until "ready")
+cgt index status my-project
+
+# 3. Search by natural language
+cgt semantic-search my-project "user authentication with password hashing" --ref main
+
+# Search at a specific commit
+cgt semantic-search my-project "auth logic" --ref 8b7d315321...
+```
+
+### Snapshots
+
+```bash
+cgt snapshots create my-project v1-backup -b main
+cgt snapshots list my-project
+cgt snapshots restore my-project v1-backup
+```
+
+### Workspace (execute commands)
+
+```bash
+cgt exec my-project "npm install && npm run build" -b main --commit --commit-message "build output"
 ```
 
 ### Clone with standard git
@@ -150,73 +187,40 @@ curl https://api.coregit.dev/v1/repos/my-project/diff/main/feature-x \
 git clone https://ORGSLUG:cgk_live_...@api.coregit.dev/ORGSLUG/my-project.git
 ```
 
-## TypeScript SDK
+## REST API (alternative to CLI)
 
-```typescript
-import { createCoregitClient } from "@coregit/sdk";
+All requests require header `x-api-key: cgk_live_...`. Use the CLI above when possible — it's shorter and handles auth automatically.
 
-const git = createCoregitClient({ apiKey: process.env.COREGIT_API_KEY! });
-
-// Create repo
-await git.repos.create({ slug: "my-project" });
-
-// Commit multiple files atomically
-await git.commits.create("my-project", {
-  branch: "main",
-  message: "feat: add auth",
-  author: { name: "Agent", email: "agent@example.com" },
-  changes: [
-    { path: "src/auth.ts", content: "export function login() {}" },
-    { path: "src/config.ts", content: '{"apiUrl": "https://api.example.com"}' },
-  ],
-});
-
-// Read file
-const { data } = await git.files.blob("my-project", "main", "src/auth.ts");
-console.log(data.content);
-
-// Semantic search (requires indexing first)
-await git.search.triggerIndex("my-project", { branch: "main" });
-const { data: results } = await git.search.semantic("my-project", {
-  q: "authentication logic",
-  ref: "main",
-});
-```
-
-### Search code (full-text)
+<details>
+<summary>curl examples (click to expand)</summary>
 
 ```bash
+# Create repo
+curl -X POST https://api.coregit.dev/v1/repos \
+  -H "x-api-key: $COREGIT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "my-project"}'
+
+# Commit files
+curl -X POST https://api.coregit.dev/v1/repos/my-project/commits \
+  -H "x-api-key: $COREGIT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"branch":"main","message":"init","author":{"name":"Agent","email":"a@a.dev"},"changes":[{"path":"app.ts","content":"console.log(1)"}]}'
+
+# Search
 curl -X POST https://api.coregit.dev/v1/search \
   -H "x-api-key: $COREGIT_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"q": "TODO", "repos": ["my-project"], "ref": "main"}'
-```
+  -d '{"q":"TODO","repos":["my-project"],"ref":"main"}'
 
-`ref` accepts a branch name or commit SHA. Omit for each repo's default branch.
-
-### Semantic search (AI-powered)
-
-Requires indexing first:
-
-```bash
-# 1. Index the repo
-curl -X POST https://api.coregit.dev/v1/repos/my-project/index \
-  -H "x-api-key: $COREGIT_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"branch": "main"}'
-
-# 2. Check status (poll until "ready")
-curl https://api.coregit.dev/v1/repos/my-project/index/status \
-  -H "x-api-key: $COREGIT_API_KEY"
-
-# 3. Search by natural language
+# Semantic search
 curl -X POST https://api.coregit.dev/v1/repos/my-project/semantic-search \
   -H "x-api-key: $COREGIT_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"q": "user authentication with password hashing", "ref": "main"}'
+  -d '{"q":"auth logic","ref":"main"}'
 ```
 
-`ref` accepts a branch name or commit SHA — search code as it existed at any version. Set `auto_index: true` on repo creation for automatic indexing on every commit.
+</details>
 
 ## Key API endpoints
 
