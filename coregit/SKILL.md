@@ -1,7 +1,7 @@
 ---
 name: coregit
 description: |
-  Serverless Git backend for AI-native products. Use this skill when the user wants to create git repos, commit code, read files, diff branches, search code (full-text or AI semantic search), or set up version control via API — without the git CLI. Handles user onboarding (signup, email verification, API key) entirely from the terminal.
+  Serverless Git backend for AI-native products. Use this skill when the user wants to create git repos, commit code, read files, diff branches, search code (full-text or AI semantic search), set up version control via API, or create LLM Wiki knowledge bases — without the git CLI. Handles user onboarding (signup, email verification, API key) entirely from the terminal.
 metadata:
   author: coregit
   version: "1.0.0"
@@ -211,13 +211,91 @@ curl -X POST https://api.coregit.dev/v1/repos/my-project/semantic-search \
 | POST | /v1/repos/:slug/index | Trigger semantic index |
 | GET | /v1/repos/:slug/index/status | Index status |
 
+## LLM Wiki (knowledge bases)
+
+Create persistent, version-controlled knowledge bases maintained by LLM agents. Based on the LLM Wiki pattern by Andrej Karpathy.
+
+A wiki is a Coregit repo with 3 layers: `raw/` (immutable sources), `wiki/` (LLM-generated pages), and `schema.md` (agent instructions).
+
+### Create a wiki
+
+```bash
+cgt wiki init my-research --title "AI Research" --description "Deep dive into transformers"
+```
+
+### Wiki operations
+
+```bash
+# List pages (with parsed frontmatter)
+cgt wiki pages my-research
+cgt wiki pages my-research --type concept --tag deep-learning
+
+# Read a page
+cgt wiki page my-research transformers.md
+cgt wiki page my-research transformers.md --raw
+
+# List and read raw sources
+cgt wiki sources my-research
+cgt wiki source my-research attention-paper.md --raw
+
+# Browse wiki structure
+cgt wiki index my-research        # content catalog (index.md)
+cgt wiki log my-research          # activity log (log.md)
+
+# Generate llms.txt for external LLM consumption
+cgt wiki llms-txt my-research --format full
+
+# Semantic search (searches both wiki pages AND raw sources)
+cgt wiki search my-research "how does attention work" --scope all
+
+# Knowledge graph (nodes, edges, tag clusters)
+cgt wiki graph my-research
+
+# Health stats (pages, sources, orphans, word counts)
+cgt wiki stats my-research
+```
+
+### Ingest workflow (agent writes wiki pages via commits)
+
+```bash
+# 1. Add a source to raw/
+cgt commit my-research -b main -m "add source" \
+  -f raw/paper.md:./paper.md
+
+# 2. Agent processes source → creates/updates wiki pages + index + log (atomic commit)
+echo '[
+  {"path":"wiki/transformers.md","content":"---\ntitle: \"Transformers\"\nsummary: \"...\"\ntags: [deep-learning]\ntype: concept\nsources: [raw/paper.md]\n---\n\nContent..."},
+  {"path":"index.md","content":"# Index\n\n## Concepts\n- [Transformers](wiki/transformers.md): ..."},
+  {"path":"log.md","content":"# Log\n\n## [2026-04-10] ingest | Paper\nCreated wiki/transformers.md."}
+]' | cgt commit my-research -b main -m "ingest: paper"
+```
+
+### Wiki API endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /v1/repos/:slug/wiki/init | Create wiki from template |
+| GET | /v1/repos/:slug/wiki/pages | List pages with frontmatter |
+| GET | /v1/repos/:slug/wiki/pages/:path | Read single page (parsed) |
+| GET | /v1/repos/:slug/wiki/sources | List raw sources |
+| GET | /v1/repos/:slug/wiki/sources/:path | Read raw source |
+| GET | /v1/repos/:slug/wiki/index | Get index.md |
+| GET | /v1/repos/:slug/wiki/log | Get log.md (parsed) |
+| GET | /v1/repos/:slug/wiki/llms.txt | Auto-generated llms.txt |
+| POST | /v1/repos/:slug/wiki/search | Semantic search (wiki + sources) |
+| GET | /v1/repos/:slug/wiki/graph | Knowledge graph |
+| GET | /v1/repos/:slug/wiki/stats | Wiki health stats |
+
 ## Important notes
 
 - The API key is shown only once during onboarding. Always remind the user to save it.
 - All file commits are atomic — multiple files in one API call.
 - Use `parent_sha` in commit requests for conflict detection (returns 409 if branch moved).
 - Snapshots are named restore points — create one before risky operations.
+- LLM Wiki pages use YAML frontmatter (title, summary, tags, sources, type, related).
+- Wiki writes use the standard commits API — wiki endpoints are read-only convenience layers.
 - Full docs at https://docs.coregit.dev
+- LLM Wiki guide: https://docs.coregit.dev/docs/guides/llm-wiki
 - Agent onboarding guide: https://docs.coregit.dev/docs/getting-started/agent-onboarding
 - TypeScript SDK: https://docs.coregit.dev/docs/getting-started/typescript-sdk
 - API reference: https://docs.coregit.dev/docs/api-reference
